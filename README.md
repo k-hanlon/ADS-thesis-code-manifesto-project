@@ -1,5 +1,6 @@
 # ADS-thesis-code-manifesto-project
-# Thesis by Leo Carlsson and Konstantin Hanlon, Gothenburg University, 2024
+# Using Language Models to evaluate annotation bias in the Manifesto Project Corpus
+## Thesis by Leo Carlsson and Konstantin Hanlon, Gothenburg University, 2024
 
 ## This repo contains the code used to create and train the models used in the the thesis and any other analysis done. Reproduction requires API keys for HuggingFace and the manifestoR API.
 
