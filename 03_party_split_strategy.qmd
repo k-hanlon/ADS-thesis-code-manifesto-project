@@ -1,0 +1,149 @@
+---
+title: "Party_split_strategy"
+format: pdf
+---
+
+```{r}
+library(tidyverse)
+df <- read_csv("data/english_annotated_full_df.csv")
+df_vdem <- read_csv("data/V-Dem-CPD-Party-V2.csv") |>
+        select(country_name, v2paid, pf_party_id, v2paenname, year, v2pariglef, v2pariglef_ord, v2paimmig, v2paimmig_ord, v2paculsup) |> 
+        arrange(v2pariglef) |> 
+        mutate(left_right = 
+                       case_when(
+                               v2pariglef_ord == 0 ~ "Far-left",
+                               v2pariglef_ord == 1 ~ "Left",
+                               v2pariglef_ord == 2 ~ "Center-left",
+                               v2pariglef_ord == 3 ~ "Center",
+                               v2pariglef_ord == 4 ~ "Center-right",
+                               v2pariglef_ord == 5 ~ "Right",
+                               v2pariglef_ord == 6 ~ "Far-right"),
+               country_name = 
+                       case_when(
+                               country_name == "United States of America" ~ "United States", 
+                               .default = country_name
+               )) |> 
+        relocate(left_right, .before = v2pariglef_ord)
+
+vdem_small <- df_vdem |> select(country_name, v2paenname, year, left_right)
+```
+
+
+```{r}
+df_parties <- df |> mutate(year = ym(date) |> year()) |> 
+        select(manifesto_id, year, countryname, partyname) |> 
+        unique() |> 
+        mutate(partyname = case_when(
+                countryname == "United Kingdom" & partyname == "Labour Party" ~ "Labour",
+                countryname == "United Kingdom" & partyname == "Liberal Party" ~ "Liberal Democrats",
+                countryname == "United Kingdom" & partyname == "Conservative Party" ~ "Conservatives",
+                
+                partyname == "We Ourselves" ~ "Sinn Fein (Provisional)", 
+                partyname == "Family of the Irish" ~ "Fine Gael (Familiy of the Irish)",
+                partyname == "Soldiers of Destiny" ~ "Fianna Fail – The Republican Party", 
+                
+                partyname == "New Zealand Labour Party" ~ "Labour Party",
+                partyname == "New Zealand National Party" ~ "National Party", 
+                countryname == "New Zealand" & partyname == "The Alliance" ~ "Alliance",
+                partyname == "Green Party of Aotearoa New Zealand" ~ "Green Party", 
+                partyname == "Social Credit Political League" ~ "Social Credit / Democratic Party",
+                
+                partyname == "National Party of Australia" ~ "Australian Country Party / National Party of Australia",
+
+                
+                partyname =="Conservative Party of Canada" ~ "Conservative Party of Canada (2003)",
+                countryname == "Canada" & partyname == "Green Party" ~ "Green Party of Canada",
+        
+                .default = partyname
+                
+        )) |> 
+        left_join(vdem_small, 
+                  by = c("countryname" = "country_name", 
+                       "partyname" = "v2paenname",
+                       "year" = "year")) 
+
+df_parties |> 
+        filter(is.na(left_right)) |> 
+        arrange(countryname, partyname, year)
+```
+
+After some joining and obvious editing of names, we still have 91 unique country-year-name combinations without a left-right score that can be imported from V-Dem. Some of these are fairly easy to classify, such as the Social Democrats from Ireland, which while a fairly centrist party in irish politics, cannot be said to be a right wing party.  
+
+Others, such as Katter's Australian Party from Australia, is harder to classify. This is a party which wikipedia describes as a mix of agrarian socialism, social conservatism, and economic nationalism. A country expert might be able to classify this party, but without extensive studies it wold be hard. 
+
+# Strategies
+## Green party split
+
+By far the easiest split is to split by green parties, as all countries with green parties in the dataset also has them named with the word "Green" in them. Drawback is that only 20 manifestos can be used, which limits the data and might make it hard to find enough similar sentences for further analysis.  
+
+```{r}
+df_parties |> filter(partyname |> str_detect("Green"))
+```
+
+## Left-Right split
+
+Of the 91 combinations without a left-right score, there are 55 unique parties. 
+
+```{r}
+df_parties |> 
+        filter(is.na(left_right)) |> 
+        select(-year, -manifesto_id) |> 
+        arrange(countryname, partyname) |>
+        unique()
+```
+
+While some still are hard to classify, most have fairly defined political positions. While it looses neuance and party drift, it's possible to classify these parties, using other sources.
+
+- If a party is a green party, it's a left party. 
+- If wikipedia has a decent page on the party, and the party has a classification that uses "left", it's a left party, if it uses "right" it's a right party. Parties with only "centre" is it's own category for now. 
+
+```{r}
+right <- c("Australian Country Party / National Party of Australia", "Country Liberal Party", "Progressive Democrats", "ACT New Zealand", 
+           "National Party", "New Zealand First Party", "Confederation for an Independent Poland", "Democratic Union", 
+           "Polish Peasants' Party", "Coalition of Coexistence and the Hungarian Christian-Democratic Movement", 
+           "African Christian Democratic Party", 
+           "African Independent Congress", "African Transformation Movement", "Democratic Party", "Freedom Front Plus", 
+           "Inkatha Freedom Party", "Democratic Unionist Party", "Ulster Unionist Party", "Republican Party")
+
+centre <- c("Centre Alliance", "Nick Xenophon Team", "United Future New Zealand", "Liberal Democrats", "Alliance Party of Northern Ireland")  
+
+left <- c("Australian Greens", "Green Party of Canada", "Anti-Austerity Alliance", "Green Party", "People Before Profit", 
+          "Social Democrats", "Socialist Party", "United Left Alliance", "Workers and Unemployment Action", "National Democratic Assembly",
+          "Jim Anderton’s Progressive", "Jim Anderton’s Progressive Coalition", "Labour Party", "Mana Party", "Māori Party", "Union of Labour",
+          "Party of the Democratic Left", "Congress of the People", "Good", "National Freedom Party", "United Democratic Movement", 
+          "Green Party of England and Wales", "Scottish National Party", "Sinn Fein (Provisional)", "Social Democratic and Labour Party", 
+          "The Party of Wales", "Progressive Party")
+
+df_parties |> mutate(
+        left_right = case_when(
+                partyname %in% right ~ "Right",
+                partyname %in% left ~ "Right",
+                partyname %in% centre ~ "Centre", 
+                .default = left_right),
+        green = case_when(
+                str_detect(partyname, "Green")~ "Yes", 
+                .default = "No"
+        ))
+```
+
+This still leaves a few party, such as the Liberal Democrats in the United Kingdom. They are described as centre to centre-left, while they also sat in government with the Conservative Party. Same with their Northern Irish party, Alliance Party of Northern Ireland. 
+
+Independent Alliance from Ireland is a coalition of non-partisan politicians, which however sat in a Fine Gael centre-right government. Katter's Australian Party is asformentioned hard to classify. 
+
+```{r}
+df_vdem |> filter(v2pariglef_ord == 6)
+```
+
+```{r}
+df |> filter(partyname == "New Zealand First Party") |>  view()
+```
+
+```{r}
+df_vdem |> filter(v2pariglef_ord >= 4,
+                  country_name == "Sweden")
+```
+
+```{r}
+df |> filter(str_detect(q_sentence, "Muslim"))
+```
+
